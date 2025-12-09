@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/RpcClient.test.ts",
+    "test": "node --test tests/**/*.test.ts",
     "test:watch": "node --test --watch tests/**/*.test.ts"
   },
   "devDependencies": {
