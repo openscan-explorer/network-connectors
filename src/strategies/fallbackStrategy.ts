@@ -1,4 +1,4 @@
-import type { RequestStrategy, StrategyResult, RPCProviderResponse } from "./strategiesTypes.ts";
+import type { RequestStrategy, StrategyResult, RPCProviderResponse } from "./strategiesTypes";
 import { RpcClient } from "../RpcClient";
 
 

@@ -1,4 +1,4 @@
-import type { RequestStrategy, StrategyResult, RPCProviderResponse, RPCMetadata } from "./strategiesTypes.ts";
+import type { RequestStrategy, StrategyResult, RPCProviderResponse, RPCMetadata } from "./strategiesTypes";
 import { RpcClient } from "../RpcClient";
 
 export class ParallelStrategy implements RequestStrategy {

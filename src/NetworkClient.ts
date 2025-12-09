@@ -1,4 +1,4 @@
-import type { RequestStrategy, StrategyResult } from "./strategies/strategiesTypes.ts";
+import type { RequestStrategy, StrategyResult } from "./strategies/strategiesTypes";
 import { StrategyFactory, type StrategyConfig } from "./strategies/requestStrategy";
 
 /**

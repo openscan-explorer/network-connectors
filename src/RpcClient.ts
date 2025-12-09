@@ -1,4 +1,4 @@
-import type { JsonRpcRequest, JsonRpcResponse } from "./RpcClientTypes.ts";
+import type { JsonRpcRequest, JsonRpcResponse } from "./RpcClientTypes";
 
 export class RpcClient {
   private url: string;
