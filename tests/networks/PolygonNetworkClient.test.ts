@@ -1,0 +1,107 @@
+import { describe, it } from "node:test";
+import assert from "node:assert";
+import { PolygonClient } from "../../src/networks/137/PolygonClient.js";
+import type { StrategyConfig } from "../../src/strategies/requestStrategy.js";
+import type { PolygonTransactionReceipt, PolygonLog } from "../../src/networks/137/PolygonTypes.js";
+
+const TEST_URLS = [
+  "https://poly.api.pocket.network",
+  "https://polygon-bor-rpc.publicnode.com",
+];
+
+// Known transaction hash with logs
+const TEST_TX_HASH = "0xa871c9e4d142905427f4c5eb2664b4840ef8a007c9f263aed6f6c64eeae71540";
+
+function isHexString(value: string): boolean {
+  return typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+}
+
+function isAddress(value: string): boolean {
+  return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
+}
+
+describe("PolygonClient - Transaction Receipt Types", () => {
+  const config: StrategyConfig = {
+    type: "fallback",
+    rpcUrls: TEST_URLS,
+  };
+
+  it("should get transaction receipt with Polygon-specific log fields", async () => {
+    const client = new PolygonClient(config);
+    const result = await client.getTransactionReceipt(TEST_TX_HASH);
+
+    assert.strictEqual(result.success, true, "Should succeed");
+    assert.ok(result.data, "Should have receipt data");
+
+    const receipt = result.data as PolygonTransactionReceipt;
+
+    // Validate standard receipt fields
+    assert.strictEqual(receipt.transactionHash, TEST_TX_HASH, "Transaction hash should match");
+    assert.ok(isHexString(receipt.blockNumber), "Block number should be hex");
+    assert.ok(isHexString(receipt.blockHash), "Block hash should be hex");
+    assert.ok(isAddress(receipt.from), "From should be address");
+    assert.ok(isHexString(receipt.gasUsed), "Gas used should be hex");
+    assert.ok(isHexString(receipt.cumulativeGasUsed), "Cumulative gas used should be hex");
+    assert.ok(Array.isArray(receipt.logs), "Logs should be array");
+
+    // Validate Polygon-specific log fields
+    if (receipt.logs.length > 0) {
+      for (const log of receipt.logs) {
+        const polygonLog = log as PolygonLog;
+
+        // Standard log fields
+        assert.ok(isAddress(polygonLog.address), "Log address should be valid");
+        assert.ok(isHexString(polygonLog.data), "Log data should be hex");
+        assert.ok(Array.isArray(polygonLog.topics), "Log topics should be array");
+        assert.ok(isHexString(polygonLog.blockNumber), "Log block number should be hex");
+        assert.ok(isHexString(polygonLog.blockHash), "Log block hash should be hex");
+        assert.ok(isHexString(polygonLog.transactionHash), "Log transaction hash should be hex");
+        assert.ok(isHexString(polygonLog.transactionIndex), "Log transaction index should be hex");
+        assert.ok(isHexString(polygonLog.logIndex), "Log index should be hex");
+
+        // Polygon-specific fields
+        assert.strictEqual(typeof polygonLog.removed, "boolean", "Log removed should be boolean");
+        assert.ok(isHexString(polygonLog.blockTimestamp), "Log blockTimestamp should be hex string (Polygon-specific)");
+
+        // Verify blockTimestamp is a valid timestamp
+        const timestamp = parseInt(polygonLog.blockTimestamp, 16);
+        assert.ok(timestamp > 0, "Block timestamp should be a positive number");
+        assert.ok(timestamp < Date.now() / 1000 + 86400, "Block timestamp should be reasonable");
+      }
+    }
+  });
+
+  it("should verify log structure matches actual Polygon response", async () => {
+    const client = new PolygonClient(config);
+    const result = await client.getTransactionReceipt(TEST_TX_HASH);
+
+    assert.strictEqual(result.success, true, "Should succeed");
+    assert.ok(result.data, "Should have receipt data");
+
+    const receipt = result.data as PolygonTransactionReceipt;
+    assert.ok(receipt.logs.length > 0, "Should have at least one log");
+
+    const firstLog = receipt.logs[0] as PolygonLog;
+
+    // Verify all required fields exist
+    const requiredFields = [
+      "address",
+      "topics",
+      "data",
+      "blockNumber",
+      "transactionHash",
+      "transactionIndex",
+      "blockHash",
+      "logIndex",
+      "removed",
+      "blockTimestamp", // Polygon-specific
+    ];
+
+    for (const field of requiredFields) {
+      assert.ok(
+        field in firstLog,
+        `Log should have required field '${field}'`
+      );
+    }
+  });
+});
