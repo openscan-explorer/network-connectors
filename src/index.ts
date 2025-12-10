@@ -59,6 +59,28 @@ export type {
   AccessListEntry as BNBAccessListEntry,
 } from "./networks/56/BNBTypes.js";
 
+// BNB Smart Chain Testnet (Chain ID: 97)
+export { BNBTestnetClient } from "./networks/97/BNBTestnetClient.js";
+export type {
+  BNBTestnetBlock,
+  BNBTestnetTransaction,
+  BNBTestnetTransactionReceipt,
+  BNBTestnetLog,
+  BNBTestnetLogFilter,
+  BNBTestnetCallObject,
+  BNBTestnetSyncingStatus,
+  BNBTestnetFinalizedHeader,
+  BNBTestnetFinalizedBlock,
+  BNBTestnetBlobSidecars,
+  BNBTestnetBlobSidecar,
+  BNBTestnetTransactionDataAndReceipt,
+  BNBTestnetHealthStatus,
+  BNBTestnetTxPoolStatus,
+  BlockNumberOrTag as BNBTestnetBlockNumberOrTag,
+  BlockTag as BNBTestnetBlockTag,
+  AccessListEntry as BNBTestnetAccessListEntry,
+} from "./networks/97/BNBTestnetTypes.js";
+
 // Polygon (Chain ID: 137)
 export { PolygonClient } from "./networks/137/PolygonClient.js";
 export type {
