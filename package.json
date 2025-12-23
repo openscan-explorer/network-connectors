@@ -1,6 +1,10 @@
 {
   "name": "explorer-network-connectors",
   "version": "0.1.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openscan-explorer/explorer-network-connectors"
+  },
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
