@@ -1,4 +1,9 @@
-import type { RequestStrategy, StrategyResult, RPCProviderResponse } from "./strategiesTypes.js";
+import type {
+  RequestStrategy,
+  StrategyResult,
+  RPCProviderResponse,
+  RPCMetadata,
+} from "./strategiesTypes.js";
 import type { RpcClient } from "../RpcClient.js";
 
 export class FallbackStrategy implements RequestStrategy {
@@ -13,28 +18,42 @@ export class FallbackStrategy implements RequestStrategy {
   /**
    * Execute request with automatic fallback
    * Tries each RPC client sequentially until one succeeds
+   * Returns metadata tracking all attempted providers
    */
 
   // biome-ignore lint/suspicious/noExplicitAny: <TODO>
   async execute<T>(method: string, params: any[]): Promise<StrategyResult<T>> {
-    const errors: RPCProviderResponse[] = [];
+    const timestamp = Date.now();
+    const responses: RPCProviderResponse[] = [];
 
     // Try each RPC client in order
     for (const rpcClient of this.rpcClients) {
       const startTime = Date.now();
       try {
         const data = await rpcClient.call<T>(method, params);
+        const responseTime = Date.now() - startTime;
+
+        responses.push({
+          url: rpcClient.getUrl(),
+          status: "success",
+          responseTime,
+          data,
+        });
 
         return {
           success: true,
           data,
-          // No metadata in fallback mode - we don't track which provider responded
-          metadata: undefined,
+          metadata: {
+            strategy: "fallback",
+            timestamp,
+            responses,
+            hasInconsistencies: false,
+          },
         };
       } catch (error) {
         const responseTime = Date.now() - startTime;
         const errorMessage = error instanceof Error ? error.message : String(error);
-        errors.push({
+        responses.push({
           url: rpcClient.getUrl(),
           status: "error",
           responseTime,
@@ -44,10 +63,18 @@ export class FallbackStrategy implements RequestStrategy {
       }
     }
 
-    // All RPC clients failed - return errors
+    // All RPC clients failed - return errors with metadata
+    const metadata: RPCMetadata = {
+      strategy: "fallback",
+      timestamp,
+      responses,
+      hasInconsistencies: false,
+    };
+
     return {
       success: false,
-      errors,
+      errors: responses,
+      metadata,
     };
   }
 

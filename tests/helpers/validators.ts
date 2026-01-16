@@ -110,6 +110,7 @@ export function validateLog(log: any): void {
 export function validateParallelMetadata(result: any, minResponses = 1): void {
   assert.ok(result.metadata, "Should have metadata");
   assert.strictEqual(result.metadata.strategy, "parallel", "Should be parallel strategy");
+  assert.ok(typeof result.metadata.timestamp === "number", "Should have timestamp");
   assert.ok(Array.isArray(result.metadata.responses), "Should have responses array");
   assert.ok(
     result.metadata.responses.length >= minResponses,
@@ -123,22 +124,52 @@ export function validateParallelMetadata(result: any, minResponses = 1): void {
 }
 
 /**
- * Validates individual response details in parallel strategy results
+ * Validates fallback strategy metadata
  */
-export function validateResponseDetails(responses: any[]): void {
+export function validateFallbackMetadata(result: any, expectedResponses?: number): void {
+  assert.ok(result.metadata, "Should have metadata");
+  assert.strictEqual(result.metadata.strategy, "fallback", "Should be fallback strategy");
+  assert.ok(typeof result.metadata.timestamp === "number", "Should have timestamp");
+  assert.ok(result.metadata.timestamp > 0, "Timestamp should be positive");
+  assert.ok(Array.isArray(result.metadata.responses), "Should have responses array");
+  assert.strictEqual(
+    result.metadata.hasInconsistencies,
+    false,
+    "Fallback strategy should not have inconsistencies",
+  );
+  if (expectedResponses !== undefined) {
+    assert.strictEqual(
+      result.metadata.responses.length,
+      expectedResponses,
+      `Should have ${expectedResponses} response(s)`,
+    );
+  }
+}
+
+/**
+ * Validates individual response details in strategy results
+ * @param responses - Array of RPCProviderResponse objects
+ * @param requireHash - Whether to require hash field on success (true for parallel, false for fallback)
+ */
+export function validateResponseDetails(responses: any[], requireHash = true): void {
   for (const response of responses) {
     assert.ok(response.url, "Response should have URL");
+    assert.ok(typeof response.url === "string", "URL should be string");
     assert.ok(
       response.status === "success" || response.status === "error",
       "Response should have valid status",
     );
     assert.ok(typeof response.responseTime === "number", "Response should have response time");
+    assert.ok(response.responseTime >= 0, "Response time should be non-negative");
 
     if (response.status === "success") {
       assert.ok(response.data !== undefined, "Successful response should have data");
-      assert.ok(response.hash, "Successful response should have hash");
+      if (requireHash) {
+        assert.ok(response.hash, "Successful response should have hash");
+      }
     } else {
       assert.ok(response.error, "Failed response should have error");
+      assert.ok(typeof response.error === "string", "Error should be string");
     }
   }
 }
