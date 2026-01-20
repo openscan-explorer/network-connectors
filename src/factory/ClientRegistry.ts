@@ -8,11 +8,29 @@ import { BaseClient } from "../networks/8453/BaseClient.js";
 import { ArbitrumClient } from "../networks/42161/ArbitrumClient.js";
 import { AztecClient } from "../networks/677868/AztecClient.js";
 import { SepoliaClient } from "../networks/11155111/SepoliaClient.js";
+import { BitcoinClient } from "../networks/bitcoin/BitcoinClient.js";
+import {
+  BITCOIN_MAINNET,
+  BITCOIN_TESTNET3,
+  BITCOIN_TESTNET4,
+  BITCOIN_SIGNET,
+  type BitcoinChainId,
+} from "../networks/bitcoin/BitcoinTypes.js";
 
 /**
- * Supported chain IDs for the client factory
+ * Supported EVM chain IDs for the client factory
  */
 export type SupportedChainId = 1 | 10 | 56 | 97 | 137 | 8453 | 42161 | 677868 | 31337 | 11155111;
+
+/**
+ * Supported Bitcoin chain IDs (CAIP-2 format with BIP122 namespace)
+ */
+export type SupportedBitcoinChainId = BitcoinChainId;
+
+/**
+ * All supported network identifiers (EVM chain IDs + Bitcoin CAIP-2 chain IDs)
+ */
+export type SupportedNetwork = SupportedChainId | SupportedBitcoinChainId;
 
 /**
  * Constructor type for network clients
@@ -20,7 +38,7 @@ export type SupportedChainId = 1 | 10 | 56 | 97 | 137 | 8453 | 42161 | 677868 | 
 export type ClientConstructor = new (config: StrategyConfig) => NetworkClient;
 
 /**
- * Map chain IDs to their specific client types
+ * Map EVM chain IDs to their specific client types
  */
 export type ChainIdToClient<T extends SupportedChainId> = T extends 1 | 31337 | 11155111
   ? EthereumClient
@@ -39,7 +57,16 @@ export type ChainIdToClient<T extends SupportedChainId> = T extends 1 | 31337 | 
               : NetworkClient;
 
 /**
- * Registry mapping chain IDs to their corresponding client constructors
+ * Map any network identifier to its specific client type
+ */
+export type NetworkToClient<T extends SupportedNetwork> = T extends SupportedBitcoinChainId
+  ? BitcoinClient
+  : T extends SupportedChainId
+    ? ChainIdToClient<T>
+    : NetworkClient;
+
+/**
+ * Registry mapping EVM chain IDs to their corresponding client constructors
  */
 const CHAIN_REGISTRY: Record<SupportedChainId, ClientConstructor> = {
   1: EthereumClient,
@@ -55,41 +82,104 @@ const CHAIN_REGISTRY: Record<SupportedChainId, ClientConstructor> = {
 };
 
 /**
- * Factory for creating network clients based on chain ID
+ * Registry mapping Bitcoin CAIP-2 chain IDs to the Bitcoin client constructor
+ */
+const BITCOIN_REGISTRY: Record<SupportedBitcoinChainId, typeof BitcoinClient> = {
+  [BITCOIN_MAINNET]: BitcoinClient,
+  [BITCOIN_TESTNET3]: BitcoinClient,
+  [BITCOIN_TESTNET4]: BitcoinClient,
+  [BITCOIN_SIGNET]: BitcoinClient,
+};
+
+/**
+ * Check if a network identifier is a Bitcoin CAIP-2 chain ID
+ */
+function isBitcoinNetwork(network: SupportedNetwork): network is SupportedBitcoinChainId {
+  return typeof network === "string" && network.startsWith("bip122:");
+}
+
+/**
+ * Factory for creating network clients based on chain ID or network identifier
  * Provides a centralized registry for instantiating chain-specific clients
  */
 export class ClientFactory {
   /**
-   * Create a network client for the specified chain ID
-   *
-   * @param chainId - The blockchain chain ID (e.g., 1 for Ethereum, 42161 for Arbitrum)
-   * @param config - Strategy configuration with RPC URLs and strategy type
-   * @returns NetworkClient instance for the specified chain
-   * @throws Error if the chain ID is not supported
+   * Create an Ethereum client
    */
-  static createClient(chainId: SupportedChainId, config: StrategyConfig): NetworkClient {
-    const ClientClass = CHAIN_REGISTRY[chainId];
-
-    if (!ClientClass) {
-      throw new Error(`Unsupported network ID: `);
+  static createClient(chainId: 1 | 31337, config: StrategyConfig): EthereumClient;
+  /**
+   * Create a Sepolia testnet client
+   */
+  static createClient(chainId: 11155111, config: StrategyConfig): SepoliaClient;
+  /**
+   * Create an Optimism client
+   */
+  static createClient(chainId: 10, config: StrategyConfig): OptimismClient;
+  /**
+   * Create a BNB Smart Chain client
+   */
+  static createClient(chainId: 56 | 97, config: StrategyConfig): BNBClient;
+  /**
+   * Create a Polygon client
+   */
+  static createClient(chainId: 137, config: StrategyConfig): PolygonClient;
+  /**
+   * Create a Base client
+   */
+  static createClient(chainId: 8453, config: StrategyConfig): BaseClient;
+  /**
+   * Create an Arbitrum client
+   */
+  static createClient(chainId: 42161, config: StrategyConfig): ArbitrumClient;
+  /**
+   * Create an Aztec client
+   */
+  static createClient(chainId: 677868, config: StrategyConfig): AztecClient;
+  /**
+   * Create a Bitcoin client (CAIP-2 chain ID)
+   */
+  static createClient(chainId: SupportedBitcoinChainId, config: StrategyConfig): BitcoinClient;
+  /**
+   * Create a network client for any supported network
+   */
+  static createClient(network: SupportedNetwork, config: StrategyConfig): NetworkClient;
+  /**
+   * Create a network client for the specified network identifier
+   *
+   * @param network - The network identifier (EVM chain ID or Bitcoin CAIP-2 chain ID)
+   * @param config - Strategy configuration with RPC URLs and strategy type
+   * @returns NetworkClient instance for the specified network
+   * @throws Error if the network is not supported
+   */
+  static createClient(network: SupportedNetwork, config: StrategyConfig): NetworkClient {
+    if (isBitcoinNetwork(network)) {
+      const ClientClass = BITCOIN_REGISTRY[network];
+      if (!ClientClass) {
+        throw new Error(`Unsupported Bitcoin network: ${network}`);
+      }
+      return new ClientClass(config);
     }
 
+    const ClientClass = CHAIN_REGISTRY[network];
+    if (!ClientClass) {
+      throw new Error(`Unsupported chain ID: ${network}`);
+    }
     return new ClientClass(config);
   }
 
   /**
-   * Create a type-specific network client for the specified chain ID
-   * Automatically infers the correct client type based on the chain ID
+   * Create a type-specific network client for the specified network
+   * Automatically infers the correct client type based on the network identifier
    *
-   * @param chainId - The blockchain chain ID
+   * @param network - The network identifier (EVM chain ID or Bitcoin CAIP-2 chain ID)
    * @param config - Strategy configuration with RPC URLs and strategy type
-   * @returns Typed client instance (e.g., ArbitrumClient for 42161, EthereumClient for 1)
-   * @throws Error if the chain ID is not supported
+   * @returns Typed client instance (e.g., BitcoinClient for BITCOIN_MAINNET, EthereumClient for 1)
+   * @throws Error if the network is not supported
    */
-  static createTypedClient<T extends SupportedChainId>(
-    chainId: T,
+  static createTypedClient<T extends SupportedNetwork>(
+    network: T,
     config: StrategyConfig,
-  ): ChainIdToClient<T> {
-    return ClientFactory.createClient(chainId, config) as ChainIdToClient<T>;
+  ): NetworkToClient<T> {
+    return ClientFactory.createClient(network, config) as NetworkToClient<T>;
   }
 }
