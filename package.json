@@ -1,6 +1,6 @@
 {
   "name": "@openscan/network-connectors",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/openscan-explorer/@openscan/network-connectors"
@@ -35,5 +35,8 @@
       "import": "./dist/index.js",
       "types": "./dist/types/index.d.ts"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
