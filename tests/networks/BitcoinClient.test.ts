@@ -1116,7 +1116,7 @@ describe("BitcoinClient - Explorer PSBT Methods", () => {
     // This may fail if the PSBT is invalid for the node, which is OK
     if (result.success && result.data) {
       validateBtcAnalyzedPsbt(result.data);
-    } 
+    }
   });
 });
 
