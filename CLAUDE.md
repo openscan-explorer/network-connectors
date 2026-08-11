@@ -44,7 +44,9 @@ This file provides structured context for AI assistants to understand the @opens
 │   │   ├── 43114/               # Avalanche C-Chain
 │   │   ├── 677868/              # Aztec
 │   │   ├── 11155111/            # Sepolia Testnet
-│   │   └── bitcoin/             # Bitcoin (CAIP-2: bip122:*)
+│   │   ├── bitcoin/             # Bitcoin (CAIP-2: bip122:*)
+│   │   ├── zcash/               # Zcash (CAIP-2: bip122:*, Zebra RPC)
+│   │   └── solana/              # Solana (CAIP-2: solana:*)
 │   ├── factory/                 # Client instantiation
 │   │   └── ClientRegistry.ts    # Chain ID to client mapping
 │   ├── NetworkClient.ts         # Base network client (concrete)
@@ -88,7 +90,8 @@ Concrete base class providing:
 - `execute<T>(method: string, params: any[]): Promise<StrategyResult<T>>` - Generic RPC method execution
 - `getStrategy(): RequestStrategy` - Get current strategy instance
 - `getStrategyName(): string` - Get strategy name ("fallback", "parallel", or "race")
-- `getRpcUrls(): string[]` - Get configured RPC URLs
+- `getRpcUrls(): string[]` - Get configured RPC URLs (endpoint objects normalized to their URL)
+- `getRpcEndpoints(): (string | RpcEndpoint)[]` - Get configured endpoints verbatim, preserving headers
 - `updateStrategy(type: StrategyConfig["type"]): void` - Dynamically switch strategies (closes old strategy's transports before replacing)
 - `close(): Promise<void>` - Close underlying transports (e.g., WebSocket connections)
 
@@ -119,18 +122,38 @@ interface JsonRpcTransport {
 
 #### createTransport() Factory ([src/JsonRpcTransport.ts](src/JsonRpcTransport.ts))
 
-Auto-detects transport from URL scheme:
+Auto-detects transport from URL scheme, and accepts either a plain URL string or an `RpcEndpoint` carrying per-endpoint headers:
 
 ```typescript
-function createTransport(url: string): JsonRpcTransport {
+interface RpcEndpoint {
+  url: string;
+  headers?: Record<string, string>;  // HTTP only — the WS handshake takes no custom headers
+}
+
+function createTransport(endpoint: string | RpcEndpoint): JsonRpcTransport {
+  const url = typeof endpoint === "string" ? endpoint : endpoint.url;
   if (url.startsWith("ws://") || url.startsWith("wss://")) {
     return new WebSocketRpcClient(url);
   }
-  return new RpcClient(url);  // HTTP
+  return new RpcClient(url, typeof endpoint === "string" ? undefined : endpoint.headers);  // HTTP
 }
 ```
 
 Used by `StrategyFactory.create()` to build transports — strategies accept `JsonRpcTransport[]` and can mix HTTP and WebSocket endpoints.
+
+**Authenticated endpoints**: providers that require an API key header (e.g. Tatum's `x-api-key`) are configured as objects. Headers are scoped per endpoint, so a credential is never sent to the other providers in the same `rpcUrls` list:
+
+```typescript
+const config = {
+  type: "fallback" as const,
+  rpcUrls: [
+    { url: "https://zcash-mainnet.gateway.tatum.io", headers: { "x-api-key": process.env.TATUM_API_KEY! } },
+    "https://zcash-mainnet-zebrad.gateway.tatum.io",  // plain strings still work
+  ],
+};
+```
+
+`NetworkClient.getRpcUrls()` still returns `string[]`, normalizing endpoint objects to their URL so headers are never exposed. Use `getRpcEndpoints()` to read back the configured entries verbatim.
 
 #### WebSocketRpcClient ([src/WebSocketRpcClient.ts](src/WebSocketRpcClient.ts))
 
@@ -211,9 +234,14 @@ interface RPCProviderResponse {
   hash?: string;  // Response hash for inconsistency detection
 }
 
+interface RpcEndpoint {
+  url: string;
+  headers?: Record<string, string>;  // HTTP transports only
+}
+
 interface StrategyConfig {
   type: "fallback" | "parallel" | "race";
-  rpcUrls: string[];
+  rpcUrls: (string | RpcEndpoint)[];  // plain strings remain valid
 }
 ```
 
@@ -426,6 +454,13 @@ static create(config: StrategyConfig): RequestStrategy {
 | Bitcoin Testnet3 | `bip122:000000000933ea01ad0ee984209779ba` | `BitcoinClient` | Bitcoin testnet3 network |
 | Bitcoin Testnet4 | `bip122:00000000da84f2bafbbc53dee25a72ae` | `BitcoinClient` | Bitcoin testnet4 (BIP94) |
 | Bitcoin Signet | `bip122:00000008819873e925422c1ff0f99f7c` | `BitcoinClient` | Bitcoin signet (BIP325) |
+| Zcash Mainnet | `bip122:00040fe8ec8471911baa1db1266ea15d` | `ZcashClient` | Zebra (`zebrad`) RPC (~40 methods), shielded pools |
+| Zcash Testnet | `bip122:05a60a92d99d85997cce3b87616c089f` | `ZcashClient` | Zcash testnet |
+| Solana Mainnet Beta | `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` | `SolanaClient` | Full Solana JSON-RPC + WebSocket subscriptions |
+| Solana Devnet | `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` | `SolanaClient` | Solana devnet cluster |
+| Solana Testnet | `solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z` | `SolanaClient` | Solana testnet cluster |
+
+**Note on `bip122:`**: Bitcoin and Zcash share the BIP122 CAIP-2 namespace, since Zcash is a Bitcoin fork. `ClientFactory` therefore routes CAIP-2 identifiers by **registry membership** (`network in ZCASH_REGISTRY`), never by prefix matching. Any future Bitcoin fork must follow the same pattern.
 
 ### Network-Specific Method Categories
 
@@ -504,6 +539,37 @@ Bitcoin Core v28+ specific features supported:
 - `getPrioritisedTransactions()` - New mempool inspection
 - `submitPackage()` with `maxfeerate` and `maxburnamount` params
 - Array-based `warnings` field in info responses
+
+**Zcash** ([src/networks/zcash/ZcashClient.ts](src/networks/zcash/ZcashClient.ts)):
+
+Zcash models the **Zebra (`zebrad`)** RPC surface, not the legacy `zcashd` one. `zcashd` reached its automatic end-of-support halt on 2026-07-18 at block 3417100 and no longer runs, so its ~130-method surface targets software that is gone. Wallet RPCs (`z_sendmany`, `z_getbalance`, …) belong to the separate Zallet daemon and are out of scope.
+
+Method categories (~40 methods):
+
+- **Chain & Blocks** (8): `getBlockchainInfo()`, `getBlockCount()`, `getBestBlockHash()`, `getBestBlockHeightAndHash()`, `getBlockHash()`, `getBlock()`, `getBlockHeader()`, `getDifficulty()`
+- **Transactions** (3): `getRawTransaction()`, `sendRawTransaction()`, `getTxOut()`
+- **Mempool** (2): `getMempoolInfo()`, `getRawMempool()`
+- **Address Index** (3): `getAddressBalance()`, `getAddressTxIds()`, `getAddressUtxos()`
+- **Shielded** (4): `zGetTreestate()`, `zGetSubtreesByIndex()`, `zValidateAddress()`, `zListUnifiedReceivers()`
+- **Mining** (9): `getBlockTemplate()`, `submitBlock()`, `getMiningInfo()`, `getNetworkSolPs()`, `getNetworkHashPs()`, `getBlockSubsidy()`, `getStandardFee()`, `generate()`, `generateToAddress()`
+- **Node & Network** (8): `getInfo()`, `getDeprecationInfo()`, `getNetworkInfo()`, `getPeerInfo()`, `ping()`, `addNode()`, `stop()`, `validateAddress()`
+- **Chain Manipulation** (2): `invalidateBlock()`, `reconsiderBlock()`
+
+Zcash-specific conventions that differ from Bitcoin — easy to get wrong:
+
+- **`hash_or_height` is a string.** `getBlock()`, `getBlockHeader()` and `zGetTreestate()` take a block hash *or a height as a decimal string*: `getBlock("3444000", 1)`, not `getBlock(3444000, 1)`.
+- **`getRawTransaction` verbosity is numeric** (`0` = hex, `1` = object), not a boolean as in Bitcoin. It takes an optional third `blockHash`.
+- **Address-index methods take an object bag**, not positional args: `getAddressBalance({ addresses: ["t1..."] })`.
+- The registered method name is `getstandardfee` (one word).
+- **HTTP only.** Zebra's RPC server is built `.http_only()`, so Zcash has no WebSocket transport, no subscriptions, and no `tests/ws/` directory.
+- Response shapes carry Zcash-only fields: `nonce` is a 32-byte hex string (not a number), `solution` holds the Equihash solution, blocks carry `finalsaplingroot`/`finalorchardroot` and `trees` (note commitment tree sizes), and `getblockchaininfo` reports per-pool `valuePools` (`transparent`, `sprout`, `sapling`, `orchard`, `lockbox`, `ironwood`).
+
+**Solana** ([src/networks/solana/SolanaClient.ts](src/networks/solana/SolanaClient.ts)):
+
+- Uses CAIP-2 `solana:*` chain IDs (first 32 chars of the genesis hash)
+- Full JSON-RPC surface plus **WebSocket subscriptions** (`accountSubscribe`, `slotSubscribe`, `logsSubscribe`, …)
+- The subscription WebSocket is created lazily from the first `ws://`/`wss://` URL in `rpcUrls` and is independent of the strategy — `updateStrategy()` does not affect it
+- Overrides `close()` to tear down the subscription socket in addition to the strategy transports
 
 ## Common Code Patterns
 
@@ -585,8 +651,18 @@ type SupportedChainId = 1 | 10 | 56 | 97 | 137 | 8453 | 42161 | 43114 | 677868 |
 // Bitcoin chain IDs (CAIP-2/BIP122 format)
 type SupportedBitcoinChainId = BitcoinChainId;  // "bip122:000000000019d6689c085ae165831e93" | ...
 
+// Zcash chain IDs (CAIP-2/BIP122 format - same namespace as Bitcoin)
+type SupportedZcashChainId = ZcashChainId;      // "bip122:00040fe8ec8471911baa1db1266ea15d" | ...
+
+// Solana chain IDs (CAIP-2/solana format)
+type SupportedSolanaChainId = SolanaChainId;    // "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp" | ...
+
 // All supported networks
-type SupportedNetwork = SupportedChainId | SupportedBitcoinChainId;
+type SupportedNetwork =
+  | SupportedChainId
+  | SupportedBitcoinChainId
+  | SupportedZcashChainId
+  | SupportedSolanaChainId;
 
 // Maps EVM chain ID to client type
 type ChainIdToClient<T extends SupportedChainId> =
@@ -603,6 +679,8 @@ type ChainIdToClient<T extends SupportedChainId> =
 
 // Maps any network identifier to client type
 type NetworkToClient<T extends SupportedNetwork> =
+  T extends SupportedSolanaChainId ? SolanaClient :
+  T extends SupportedZcashChainId ? ZcashClient :
   T extends SupportedBitcoinChainId ? BitcoinClient :
   T extends SupportedChainId ? ChainIdToClient<T> :
   NetworkClient;
@@ -623,6 +701,8 @@ static createClient(chainId: 42161, config: StrategyConfig): ArbitrumClient;
 static createClient(chainId: 43114, config: StrategyConfig): AvalancheClient;
 static createClient(chainId: 677868, config: StrategyConfig): AztecClient;
 static createClient(chainId: SupportedBitcoinChainId, config: StrategyConfig): BitcoinClient;
+static createClient(chainId: SupportedZcashChainId, config: StrategyConfig): ZcashClient;
+static createClient(chainId: SupportedSolanaChainId, config: StrategyConfig): SolanaClient;
 static createClient(network: SupportedNetwork, config: StrategyConfig): NetworkClient;
 
 // Type-safe client with generic inference
@@ -821,16 +901,19 @@ Tests are split by transport to validate both HTTP and WebSocket:
 
 To add a new network:
 
-1. Create directory in [src/networks/](src/networks/) with chain ID
-2. Define network-specific types (if needed)
+1. Create directory in [src/networks/](src/networks/) — named by numeric chain ID for EVM chains, by lowercase name for non-EVM chains (`bitcoin/`, `zcash/`, `solana/`)
+2. Define network-specific types. For non-EVM chains, declare the CAIP-2 chain ID constants and the `<Name>ChainId` union **in the types file** — the registry imports them from there
 3. Create client class extending `NetworkClient`
 4. Implement network-specific RPC methods
-5. Update `SupportedChainId` type in [src/factory/ClientRegistry.ts](src/factory/ClientRegistry.ts)
-6. Update `ChainIdToClient` type mapping
-7. Add case to factory `createClient()` and `createTypedClient()` methods
-8. Export from [src/index.ts](src/index.ts)
-9. Add HTTP tests in [tests/http/networks/](tests/http/networks/)
-10. Add WebSocket tests in [tests/ws/networks/<CHAIN_ID>/](tests/ws/networks/)
+5. Wire up [src/factory/ClientRegistry.ts](src/factory/ClientRegistry.ts) — the steps differ by chain kind:
+   - **EVM**: add the ID to `SupportedChainId`, update `ChainIdToClient`, add a `CHAIN_REGISTRY` entry, add a `createClient()` overload
+   - **CAIP-2** (Bitcoin, Zcash, Solana): add a `Supported<Name>ChainId` alias, extend `SupportedNetwork`, add a branch to **`NetworkToClient`** (*not* `ChainIdToClient`, which is EVM-only), add a `<NAME>_REGISTRY`, add an `is<Name>Network()` guard, then add the `createClient()` overload and a dispatch branch
+   - `createTypedClient()` needs no change — it delegates and casts through `NetworkToClient<T>`
+6. **Write the type guard as a registry-membership test** (`network in <NAME>_REGISTRY`), never a namespace prefix check. Bitcoin and Zcash both live under `bip122:`, so prefix matching silently misroutes one into the other's registry
+7. Export from [src/index.ts](src/index.ts): banner comment, value export of the client, value export of the chain ID constants, then one `export type {}` block
+8. Add HTTP tests in [tests/http/networks/](tests/http/networks/) and factory cases in [tests/http/factory/ClientFactory.test.ts](tests/http/factory/ClientFactory.test.ts)
+9. Add WebSocket tests in [tests/ws/networks/<CHAIN_ID>/](tests/ws/networks/) — **only if the network actually has a WebSocket RPC**. Bitcoin and Zcash do not (Zebra's RPC server is HTTP-only), so they ship HTTP tests only
+10. Update the network tables in both [README.md](README.md) and this file
 
 ## Adding New RPC Methods
 
