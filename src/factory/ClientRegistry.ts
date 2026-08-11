@@ -18,6 +18,8 @@ import {
   BITCOIN_SIGNET,
   type BitcoinChainId,
 } from "../networks/bitcoin/BitcoinTypes.js";
+import { ZcashClient } from "../networks/zcash/ZcashClient.js";
+import { ZCASH_MAINNET, ZCASH_TESTNET, type ZcashChainId } from "../networks/zcash/ZcashTypes.js";
 import { SolanaClient } from "../networks/solana/SolanaClient.js";
 import {
   SOLANA_MAINNET,
@@ -48,14 +50,27 @@ export type SupportedChainId =
 export type SupportedBitcoinChainId = BitcoinChainId;
 
 /**
+ * Supported Zcash chain IDs (CAIP-2 format with BIP122 namespace)
+ *
+ * Note Zcash shares the `bip122:` namespace with Bitcoin, since it is a Bitcoin
+ * fork. Routing therefore discriminates on registry membership, not on the
+ * namespace prefix — see {@link isZcashNetwork} and {@link isBitcoinNetwork}.
+ */
+export type SupportedZcashChainId = ZcashChainId;
+
+/**
  * Supported Solana chain IDs (CAIP-2 format with solana namespace)
  */
 export type SupportedSolanaChainId = SolanaChainId;
 
 /**
- * All supported network identifiers (EVM chain IDs + Bitcoin + Solana CAIP-2 chain IDs)
+ * All supported network identifiers (EVM chain IDs + Bitcoin, Zcash and Solana CAIP-2 chain IDs)
  */
-export type SupportedNetwork = SupportedChainId | SupportedBitcoinChainId | SupportedSolanaChainId;
+export type SupportedNetwork =
+  | SupportedChainId
+  | SupportedBitcoinChainId
+  | SupportedZcashChainId
+  | SupportedSolanaChainId;
 
 /**
  * Constructor type for network clients
@@ -90,11 +105,13 @@ export type ChainIdToClient<T extends SupportedChainId> = T extends 1 | 11155111
  */
 export type NetworkToClient<T extends SupportedNetwork> = T extends SupportedSolanaChainId
   ? SolanaClient
-  : T extends SupportedBitcoinChainId
-    ? BitcoinClient
-    : T extends SupportedChainId
-      ? ChainIdToClient<T>
-      : NetworkClient;
+  : T extends SupportedZcashChainId
+    ? ZcashClient
+    : T extends SupportedBitcoinChainId
+      ? BitcoinClient
+      : T extends SupportedChainId
+        ? ChainIdToClient<T>
+        : NetworkClient;
 
 /**
  * Registry mapping EVM chain IDs to their corresponding client constructors
@@ -124,6 +141,14 @@ const BITCOIN_REGISTRY: Record<SupportedBitcoinChainId, typeof BitcoinClient> = 
 };
 
 /**
+ * Registry mapping Zcash CAIP-2 chain IDs to the Zcash client constructor
+ */
+const ZCASH_REGISTRY: Record<SupportedZcashChainId, typeof ZcashClient> = {
+  [ZCASH_MAINNET]: ZcashClient,
+  [ZCASH_TESTNET]: ZcashClient,
+};
+
+/**
  * Registry mapping Solana CAIP-2 chain IDs to the Solana client constructor
  */
 const SOLANA_REGISTRY: Record<SupportedSolanaChainId, typeof SolanaClient> = {
@@ -133,10 +158,23 @@ const SOLANA_REGISTRY: Record<SupportedSolanaChainId, typeof SolanaClient> = {
 };
 
 /**
+ * Check if a network identifier is a Zcash CAIP-2 chain ID
+ *
+ * Matches on registry membership rather than the `bip122:` prefix, which Zcash
+ * shares with Bitcoin.
+ */
+function isZcashNetwork(network: SupportedNetwork): network is SupportedZcashChainId {
+  return typeof network === "string" && network in ZCASH_REGISTRY;
+}
+
+/**
  * Check if a network identifier is a Bitcoin CAIP-2 chain ID
+ *
+ * Matches on registry membership rather than the `bip122:` prefix, which Bitcoin
+ * shares with Zcash (and would share with any other Bitcoin fork added later).
  */
 function isBitcoinNetwork(network: SupportedNetwork): network is SupportedBitcoinChainId {
-  return typeof network === "string" && network.startsWith("bip122:");
+  return typeof network === "string" && network in BITCOIN_REGISTRY;
 }
 
 /**
@@ -196,6 +234,10 @@ export class ClientFactory {
    */
   static createClient(chainId: SupportedBitcoinChainId, config: StrategyConfig): BitcoinClient;
   /**
+   * Create a Zcash client (CAIP-2 chain ID)
+   */
+  static createClient(chainId: SupportedZcashChainId, config: StrategyConfig): ZcashClient;
+  /**
    * Create a Solana client (CAIP-2 chain ID)
    */
   static createClient(chainId: SupportedSolanaChainId, config: StrategyConfig): SolanaClient;
@@ -206,7 +248,7 @@ export class ClientFactory {
   /**
    * Create a network client for the specified network identifier
    *
-   * @param network - The network identifier (EVM chain ID, Bitcoin or Solana CAIP-2 chain ID)
+   * @param network - The network identifier (EVM chain ID, or Bitcoin, Zcash or Solana CAIP-2 chain ID)
    * @param config - Strategy configuration with RPC URLs and strategy type
    * @returns NetworkClient instance for the specified network
    * @throws Error if the network is not supported
@@ -216,6 +258,14 @@ export class ClientFactory {
       const ClientClass = SOLANA_REGISTRY[network];
       if (!ClientClass) {
         throw new Error(`Unsupported Solana network: ${network}`);
+      }
+      return new ClientClass(config);
+    }
+
+    if (isZcashNetwork(network)) {
+      const ClientClass = ZCASH_REGISTRY[network];
+      if (!ClientClass) {
+        throw new Error(`Unsupported Zcash network: ${network}`);
       }
       return new ClientClass(config);
     }
@@ -239,9 +289,9 @@ export class ClientFactory {
    * Create a type-specific network client for the specified network
    * Automatically infers the correct client type based on the network identifier
    *
-   * @param network - The network identifier (EVM chain ID, Bitcoin or Solana CAIP-2 chain ID)
+   * @param network - The network identifier (EVM chain ID, or Bitcoin, Zcash or Solana CAIP-2 chain ID)
    * @param config - Strategy configuration with RPC URLs and strategy type
-   * @returns Typed client instance (e.g., SolanaClient for SOLANA_MAINNET, BitcoinClient for BITCOIN_MAINNET)
+   * @returns Typed client instance (e.g., SolanaClient for SOLANA_MAINNET, ZcashClient for ZCASH_MAINNET)
    * @throws Error if the network is not supported
    */
   static createTypedClient<T extends SupportedNetwork>(

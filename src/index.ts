@@ -297,6 +297,65 @@ export type {
   BtcBlockFilter,
 } from "./networks/bitcoin/BitcoinTypes.js";
 
+// Zcash (CAIP-2 Chain IDs: bip122:*)
+export { ZcashClient } from "./networks/zcash/ZcashClient.js";
+export { ZCASH_MAINNET, ZCASH_TESTNET } from "./networks/zcash/ZcashTypes.js";
+export type {
+  ZcashChainId,
+  ZecHashOrHeight,
+  ZecValuePoolId,
+  ZecUpgradeStatus,
+  ZecValuePoolBalance,
+  ZecChainSupply,
+  ZecNetworkUpgradeInfo,
+  ZecTipConsensusBranch,
+  ZecBlockchainInfo,
+  ZecBlockHeightAndHash,
+  ZecBlockTrees,
+  ZecBlockHeader,
+  ZecBlock,
+  ZecBlockVerbose,
+  ZecScriptSig,
+  ZecScriptPubKey,
+  ZecVin,
+  ZecVout,
+  ZecShieldedSpend,
+  ZecShieldedOutput,
+  ZecOrchardAction,
+  ZecOrchardBundle,
+  ZecJoinSplit,
+  ZecRawTransaction,
+  ZecTxOut,
+  ZecMempoolInfo,
+  ZecMempoolEntry,
+  ZecAddressRequest,
+  ZecAddressTxIdsRequest,
+  ZecAddressBalance,
+  ZecAddressUtxo,
+  ZecTreestatePool,
+  ZecTreestate,
+  ZecSubtree,
+  ZecSubtrees,
+  ZecUnifiedReceivers,
+  ZecValidateAddress,
+  ZecZValidateAddress,
+  ZecInfo,
+  ZecDeprecationInfo,
+  ZecNetwork,
+  ZecLocalAddress,
+  ZecNetworkInfo,
+  ZecPeerInfo,
+  ZecMiningInfo,
+  ZecFundingStream,
+  ZecBlockSubsidy,
+  ZecStandardFee,
+  ZecBlockTemplateTransaction,
+  ZecBlockTemplateCoinbase,
+  ZecBlockTemplate,
+  ZecBlockTemplateRequest,
+  ZecSubmitBlockResult,
+} from "./networks/zcash/ZcashTypes.js";
+
 // Solana (CAIP-2 Chain IDs: solana:*)
 export { SolanaClient } from "./networks/solana/SolanaClient.js";
 export {
@@ -361,6 +420,7 @@ export { ClientFactory } from "./factory/ClientRegistry.js";
 export type {
   SupportedChainId,
   SupportedBitcoinChainId,
+  SupportedZcashChainId,
   SupportedSolanaChainId,
   SupportedNetwork,
   ClientConstructor,
@@ -370,7 +430,7 @@ export type {
 
 // Strategy types and factory
 export { StrategyFactory } from "./strategies/requestStrategy.js";
-export type { StrategyConfig } from "./strategies/requestStrategy.js";
+export type { StrategyConfig, RpcEndpoint } from "./strategies/requestStrategy.js";
 export type {
   RequestStrategy,
   StrategyResult,
