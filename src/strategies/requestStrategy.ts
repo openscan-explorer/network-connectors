@@ -2,11 +2,14 @@ import type { RequestStrategy } from "./strategiesTypes.js";
 import { FallbackStrategy } from "./fallbackStrategy.js";
 import { ParallelStrategy } from "./parallelStrategy.js";
 import { RaceStrategy } from "./raceStrategy.js";
-import { createTransport } from "../JsonRpcTransport.js";
+import { createTransport, type RpcEndpoint } from "../JsonRpcTransport.js";
+
+export type { RpcEndpoint };
 
 export interface StrategyConfig {
   type: "fallback" | "parallel" | "race";
-  rpcUrls: string[];
+  /** RPC endpoints — plain URL strings, or objects carrying per-endpoint headers */
+  rpcUrls: (string | RpcEndpoint)[];
 }
 
 export class StrategyFactory {
@@ -20,8 +23,8 @@ export class StrategyFactory {
       throw new Error("At least one RPC URL must be provided");
     }
 
-    // Create transports for each URL (auto-detects HTTP vs WebSocket from scheme)
-    const rpcClients = config.rpcUrls.map((url) => createTransport(url));
+    // Create transports for each endpoint (auto-detects HTTP vs WebSocket from scheme)
+    const rpcClients = config.rpcUrls.map((endpoint) => createTransport(endpoint));
 
     switch (config.type) {
       case "fallback":

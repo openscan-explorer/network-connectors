@@ -3,10 +3,16 @@ import type { JsonRpcRequest, JsonRpcResponse } from "./RpcClientTypes.js";
 
 export class RpcClient implements JsonRpcTransport {
   private url: string;
+  private headers: Record<string, string>;
   private requestId: number = 0;
 
-  constructor(url: string) {
+  /**
+   * @param url - The HTTP(S) JSON-RPC endpoint
+   * @param headers - Optional extra headers (e.g. `{ "x-api-key": "..." }`) sent with every request
+   */
+  constructor(url: string, headers?: Record<string, string>) {
     this.url = url;
+    this.headers = headers ?? {};
   }
 
   // biome-ignore lint/suspicious/noExplicitAny: <TODO>
@@ -22,6 +28,7 @@ export class RpcClient implements JsonRpcTransport {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...this.headers,
       },
       body: JSON.stringify(request),
     });

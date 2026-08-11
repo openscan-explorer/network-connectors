@@ -85,7 +85,9 @@ export class SolanaClient extends NetworkClient {
   constructor(config: StrategyConfig) {
     super(config);
     this.subscriptionWsUrl =
-      config.rpcUrls.find((url) => url.startsWith("wss://") || url.startsWith("ws://")) ?? null;
+      config.rpcUrls
+        .map((endpoint) => (typeof endpoint === "string" ? endpoint : endpoint.url))
+        .find((url) => url.startsWith("wss://") || url.startsWith("ws://")) ?? null;
   }
 
   private getSubscriptionWs(): WebSocketRpcClient {
