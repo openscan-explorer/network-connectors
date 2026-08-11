@@ -9,8 +9,9 @@ TypeScript library providing unified, type-safe RPC client interfaces for multip
 
 ## Features
 
-- **Multi-Network Support**: Unified API for 10+ blockchain networks including EVM chains (Ethereum, Optimism, Arbitrum, Polygon, BNB, Base, Avalanche, Aztec) and Bitcoin
+- **Multi-Network Support**: Unified API for 10+ blockchain networks including EVM chains (Ethereum, Optimism, Arbitrum, Polygon, BNB, Base, Avalanche, Aztec), Bitcoin, Zcash and Solana
 - **Bitcoin Support**: Full Bitcoin Core v28+ RPC support with ~115 methods using CAIP-2/BIP122 chain identifiers
+- **Zcash Support**: Full Zebra (`zebrad`) RPC support with ~40 methods, including the shielded pool and address-index RPCs
 - **Strategy Pattern**: Pluggable request execution strategies (Fallback for reliability, Parallel for consistency detection, Race for minimum latency)
 - **Type Safety**: Strong TypeScript typing with network-specific type definitions
 - **Dual Transport**: HTTP and WebSocket support with automatic transport detection from URL scheme
@@ -85,6 +86,58 @@ import {
 | Mining | ~9 | `getMiningInfo`, `getNetworkHashPs`, `getBlockTemplate`, `submitBlock`, `generateToAddress`, etc. |
 | Wallet | ~35 | `getWalletInfo`, `getBalances`, `listWallets`, `sendToAddress`, `listUnspent`, `importDescriptors`, etc. |
 | Control | ~6 | `getMemoryInfo`, `getRpcInfo`, `help`, `uptime`, `logging`, `stop` |
+
+### Zcash Networks
+
+Zcash is a Bitcoin fork, so it shares the `bip122:` CAIP-2 namespace with Bitcoin. Chain IDs are still unique — the reference is the first 32 hex characters of each chain's genesis block hash — and the factory routes on registry membership rather than the namespace prefix.
+
+| Network | Chain ID (CAIP-2) | Client Class | Special Features |
+|---------|-------------------|--------------|------------------|
+| Zcash Mainnet | `bip122:00040fe8ec8471911baa1db1266ea15d` | `ZcashClient` | Full Zebra RPC (~40 methods) incl. shielded pools |
+| Zcash Testnet | `bip122:05a60a92d99d85997cce3b87616c089f` | `ZcashClient` | Zcash testnet |
+
+> **Node implementation**: `zcashd` reached its automatic end-of-support halt on 2026-07-18 and no longer runs. `ZcashClient` therefore models the RPC surface of [Zebra](https://zebra.zfnd.org/) (`zebrad`), the current Zcash node. Wallet RPCs (`z_sendmany`, `z_getbalance`, …) live in the separate Zallet daemon and are not covered here.
+>
+> **Transport**: Zebra's RPC server is HTTP-only, so Zcash has no WebSocket transport or subscription support.
+
+#### Zcash Chain ID Constants
+
+```typescript
+import { ZCASH_MAINNET, ZCASH_TESTNET } from "@openscan/network-connectors";
+
+// ZCASH_MAINNET = "bip122:00040fe8ec8471911baa1db1266ea15d"
+```
+
+#### Zcash Method Categories (~40 methods)
+
+| Category | Methods | Description |
+|----------|---------|-------------|
+| Chain & Blocks | 8 | `getBlockchainInfo`, `getBlockCount`, `getBestBlockHash`, `getBestBlockHeightAndHash`, `getBlockHash`, `getBlock`, `getBlockHeader`, `getDifficulty` |
+| Transactions | 3 | `getRawTransaction`, `sendRawTransaction`, `getTxOut` |
+| Mempool | 2 | `getMempoolInfo`, `getRawMempool` |
+| Address Index | 3 | `getAddressBalance`, `getAddressTxIds`, `getAddressUtxos` |
+| Shielded | 4 | `zGetTreestate`, `zGetSubtreesByIndex`, `zValidateAddress`, `zListUnifiedReceivers` |
+| Mining | 9 | `getBlockTemplate`, `submitBlock`, `getMiningInfo`, `getNetworkSolPs`, `getBlockSubsidy`, `getStandardFee`, `generate`, `generateToAddress`, `getNetworkHashPs` |
+| Node & Network | 8 | `getInfo`, `getDeprecationInfo`, `getNetworkInfo`, `getPeerInfo`, `ping`, `addNode`, `stop`, `validateAddress` |
+| Chain Manipulation | 2 | `invalidateBlock`, `reconsiderBlock` |
+
+Note some parameter conventions differ from Bitcoin: `getBlock`, `getBlockHeader` and `zGetTreestate` take a block hash **or a height as a decimal string** (`getBlock("3444000", 1)`); `getRawTransaction` takes a numeric verbosity (`0` or `1`) rather than a boolean; and the address-index methods take a single object argument (`getAddressBalance({ addresses: ["t1..."] })`).
+
+## Authenticated RPC Endpoints
+
+Endpoints that require an API key header can be configured as objects instead of plain URL strings. Headers are scoped per endpoint, so a credential is never sent to the other providers in the same list:
+
+```typescript
+const client = ClientFactory.createClient(ZCASH_MAINNET, {
+  type: "fallback",
+  rpcUrls: [
+    { url: "https://zcash-mainnet.gateway.tatum.io", headers: { "x-api-key": process.env.TATUM_API_KEY! } },
+    "https://zcash-mainnet-zebrad.gateway.tatum.io", // plain strings still work
+  ],
+});
+```
+
+Headers apply to HTTP transports only — the WebSocket handshake does not support custom headers.
 
 ## Project Structure
 
@@ -331,12 +384,15 @@ To add support for a new blockchain network:
 1. **Create network directory**:
 
    ```bash
-   mkdir -p src/networks/<CHAIN_ID>
+   mkdir -p src/networks/<CHAIN_ID>   # EVM chains use the numeric chain ID
+   mkdir -p src/networks/<name>       # non-EVM chains use a lowercase name (bitcoin, zcash, solana)
    ```
 
 2. **Define network-specific types** (if needed):
    - Create types file for network-specific data structures
    - Extend base Ethereum types if applicable
+   - For non-EVM chains, declare the CAIP-2 chain ID constants and the `<Name>ChainId`
+     union here — the registry imports them from the types file
 
 3. **Create client class**:
    - Extend `NetworkClient` base class
@@ -344,21 +400,29 @@ To add support for a new blockchain network:
    - Use `this.execute<T>(method, params)` for all RPC calls
    - Add JSDoc comments for all public methods
 
-4. **Update factory**:
-   - Add chain ID to `SupportedChainId` type in [src/factory/ClientRegistry.ts](src/factory/ClientRegistry.ts)
-   - Update `ChainIdToClient` type mapping
-   - Add case to `createClient()` and `createTypedClient()` methods
+4. **Update factory** in [src/factory/ClientRegistry.ts](src/factory/ClientRegistry.ts):
+   - **EVM chains**: add the chain ID to `SupportedChainId`, update the `ChainIdToClient`
+     mapping, add an entry to `CHAIN_REGISTRY`, and add a `createClient()` overload
+   - **CAIP-2 chains** (Bitcoin, Zcash, Solana): add a `Supported<Name>ChainId` alias,
+     extend `SupportedNetwork`, add a branch to **`NetworkToClient`** (not `ChainIdToClient`),
+     add a `<NAME>_REGISTRY`, add an `is<Name>Network()` guard that tests **registry
+     membership** (never a namespace prefix — Bitcoin and Zcash share `bip122:`), then add
+     the `createClient()` overload and a dispatch branch
+   - `createTypedClient()` needs no change; it delegates and casts through `NetworkToClient`
 
 5. **Export from index**:
-   - Add exports to [src/index.ts](src/index.ts)
+   - Add exports to [src/index.ts](src/index.ts): a banner comment, a value export for the
+     client, a value export for the chain ID constants, then one `export type {}` block
 
 6. **Add tests**:
    - Create HTTP test file in `tests/http/networks/`
-   - Create WebSocket test directory and file in `tests/ws/networks/<CHAIN_ID>/`
+   - Create a WebSocket test directory and file in `tests/ws/networks/<CHAIN_ID>/`, **if the
+     network has a WebSocket RPC** — Bitcoin and Zcash do not, so they have HTTP tests only
+   - Add factory cases to `tests/http/factory/ClientFactory.test.ts`
    - Test client instantiation, methods, and type safety
 
 7. **Update documentation**:
-   - Add network to supported networks table in README.md
+   - Add network to supported networks table in README.md and CLAUDE.md
    - Document any special features or methods
 
 ### Adding New RPC Methods

@@ -1,5 +1,6 @@
 import type { RequestStrategy, StrategyResult } from "./strategies/strategiesTypes.js";
 import { StrategyFactory, type StrategyConfig } from "./strategies/requestStrategy.js";
+import type { RpcEndpoint } from "./JsonRpcTransport.js";
 
 /**
  * Base network client that uses strategy pattern for RPC requests
@@ -7,7 +8,7 @@ import { StrategyFactory, type StrategyConfig } from "./strategies/requestStrate
  */
 export class NetworkClient {
   protected strategy: RequestStrategy;
-  protected rpcUrls: string[];
+  protected rpcUrls: (string | RpcEndpoint)[];
 
   constructor(config: StrategyConfig) {
     this.strategy = StrategyFactory.create(config);
@@ -41,8 +42,18 @@ export class NetworkClient {
 
   /**
    * Get the RPC URLs
+   *
+   * Endpoints configured as objects are normalized to their URL, so this always
+   * returns plain strings and never exposes configured headers.
    */
   getRpcUrls(): string[] {
+    return this.rpcUrls.map((endpoint) => (typeof endpoint === "string" ? endpoint : endpoint.url));
+  }
+
+  /**
+   * Get the configured endpoints as provided, preserving any per-endpoint headers
+   */
+  getRpcEndpoints(): (string | RpcEndpoint)[] {
     return this.rpcUrls;
   }
 
