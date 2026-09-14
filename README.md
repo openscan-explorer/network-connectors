@@ -558,7 +558,7 @@ npm run lint:fix    # Auto-fix linting issues
 ### Manual Release
 
 1. Ensure you're on the `main` branch with a clean working directory
-2. Update version in `package.json` if needed
+2. Confirm `package.json` carries a version not yet on npm — the PR being released bumps it (see [Version Management](#version-management))
 3. Run the release script:
 
    ```bash
@@ -576,17 +576,22 @@ npm run lint:fix    # Auto-fix linting issues
 
 Every push to the `main` branch triggers automatic npm publication via GitHub Actions:
 
-1. Merge your PR to `main`
+1. Merge your PR — including its version bump — to `main`
 2. GitHub Actions automatically builds and publishes
 3. Check Actions tab for workflow status
+
+The publish step only runs when the version in `package.json` is not already on npm. A merge without a version bump publishes nothing, yet the workflow still reports success.
 
 ### Version Management
 
 - Version is managed in `package.json`
-- Follow [Semantic Versioning](https://semver.org/):
-  - MAJOR: Breaking changes
+- **Every PR that adds functionality or resolves an issue must bump the version**, in that same PR
+- Follow [Semantic Versioning](https://semver.org/) — when a PR mixes kinds of change, the highest level wins:
+  - MAJOR: Breaking changes to the public API
   - MINOR: New features (backwards compatible)
   - PATCH: Bug fixes (backwards compatible)
+- Bump with `npm version <major|minor|patch> --no-git-tag-version`, which updates `package.json` and `package-lock.json` together, and commit it on its own with the bare version as the subject (e.g. `1.8.1`)
+- PRs that change no shipped code — docs, tests, CI, tooling — need no bump
 
 ## Configuration Files
 

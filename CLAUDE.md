@@ -931,7 +931,29 @@ Zcash suite makes no live requests, staying inside Tatum's 5 req/min anonymous c
   2. Setup Node.js with npm registry
   3. Install dependencies (`npm ci`)
   4. Build project (`npm run build`)
-  5. Publish to npm (JS-DevTools/npm-publish with OIDC)
+  5. Publish to npm (JS-DevTools/npm-publish with OIDC) — a no-op, not a failure, when npm
+     already has this version; see [Versioning](#versioning)
+
+### Versioning
+
+**Every PR that adds functionality or resolves an issue bumps the version.** Follow
+[Semantic Versioning](https://semver.org/); when a PR mixes kinds of change, the highest level wins:
+
+| Level | Bump for | Examples |
+|-------|----------|----------|
+| **MAJOR** | A breaking change to the public API (anything exported from [src/index.ts](src/index.ts)) | Removing or renaming an export; narrowing a parameter type or widening a return type |
+| **MINOR** | New functionality (`feat`) | A new network, client method, option, or export |
+| **PATCH** | A resolved issue (`fix`, `perf`, a behaviour-changing `refactor`) | Wrong data returned, a crash, a misrouted request |
+
+- Bump **in the same PR** as the change, in its own commit whose subject is the bare version (`1.8.1`)
+- Run `npm version <major|minor|patch> --no-git-tag-version`, which updates `package.json` and
+  `package-lock.json` together without creating a commit or tag of its own
+- **Exempt**: PRs that change no shipped code — docs, tests, CI, tooling (nothing under `src/`)
+
+**Why**: the publish step is a silent no-op for a version npm already has, so a merge without a
+bump releases nothing while the workflow still reports success. That is how
+[#26](https://github.com/openscan-explorer/network-connectors/pull/26) (Zcash, per-endpoint
+headers) reached `main` without being published.
 
 ## Code Quality Standards
 
@@ -987,3 +1009,4 @@ To add new RPC methods to existing network:
 - **Real RPC Tests**: Always test with real RPC calls against live endpoints. Never mock RPC calls
 - **Type Validation**: Always validate response data against the expected TypeScript types. If a method cannot be validated against real types (e.g., admin/debug methods unsupported on public nodes), tag the test with `[weak]`. Tests with full type validation are tagged `[strong]`. `npm run typecheck` covers the test files (via `tsconfig.test.json`), so prefer `assert.ok(result.data)` — which narrows, being declared `asserts value` — over an `as` cast, which would hide a genuine type regression
 - **BNB Testnet Factory Note**: `ClientFactory` maps chain 97 to `BNBClient` at runtime, but `BNBTestnetClient` is exported from `index.ts` for direct instantiation
+- **Version Bump**: Every PR that adds functionality or resolves an issue bumps `package.json` — MINOR for features, PATCH for fixes, MAJOR for breaking changes — in its own commit. Without it, merging to `main` publishes nothing. See [Versioning](#versioning)
