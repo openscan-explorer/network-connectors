@@ -1,6 +1,6 @@
 {
   "name": "@openscan/network-connectors",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/openscan-explorer/network-connectors"
